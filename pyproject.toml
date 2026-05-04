@@ -22,22 +22,50 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = [
+    "accelerate",
     "cmudict",
     "cn2an",
+    # 0.10.1은 CUDA 11 + cuDNN 8 전용; 1.x부터 CUDA 12 지원 (ctranslate2>=4.0)
+    "faster-whisper>=1.1.0",
     "g2p_en",
+    "GPUtil",
+    "gradio>=4.32",
     "jieba",
+    # 0.9.2는 pkg_resources(setuptools) 의존으로 Python 3.12 venv에서 임포트 실패
+    "librosa>=0.10.0",
     "loguru",
     "nltk<=3.8.1",
     "num2words",
     "numba",
     "numpy<2",
+    "onnx",
+    "onnxconverter-common",
     "onnxruntime",
+    "onnxruntime-directml; sys_platform == 'win32'",
+    "onnxruntime-gpu; sys_platform != 'darwin'",
+    "onnxsim-prebuilt",
+    "protobuf==4.25",
+    "psutil",
+    "punctuators",
+    "pyannote.audio>=3.1.0",
     "pydantic>=2.0",
+    "pyloudnorm",
+    # pyopenjtalk-dict가 번들링한 pyopenjtalk 구버전이 pkg_resources 사용;
+    # setuptools<70이 pkg_resources를 top-level 모듈로 설치함
+    "setuptools<70",
     "pyopenjtalk-dict",
     "pypinyin",
     "pyworld-prebuilt",
     "safetensors",
-    "transformers",
+    "stable_ts",
+    "tensorboard",
+    # cu128 인덱스 기준 Python 3.12 + Windows 지원 범위: 2.7.0~
+    # RTX 5000 (Blackwell, sm_120) 지원은 torch 2.7+부터
+    "torch>=2.7",
+    "torchaudio>=2.7",
+    # torch>=2.6이므로 CVE-2025-32434 체크 통과, torch>=2.4이므로 5.x 체크도 통과
+    "transformers>=4.0",
+    "umap-learn",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +78,15 @@ torch = [
 Documentation = "https://github.com/litagin02/Style-Bert-VITS2#readme"
 Issues = "https://github.com/litagin02/Style-Bert-VITS2/issues"
 Source = "https://github.com/litagin02/Style-Bert-VITS2"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
 
 [tool.hatch.version]
 path = "style_bert_vits2/constants.py"
