@@ -1,10 +1,64 @@
 import argparse
+import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
+import soundfile as sf
 import torch
+import torchaudio
 from numpy.typing import NDArray
+
+# ── torchaudio 2.11 compatibility shim ───────────────────────────────────────
+# torchaudio 2.11 removed AudioMetaData, info(), list_audio_backends(), and
+# replaced load() with a torchcodec-only implementation.
+# pyannote.audio 3.x uses these APIs, so we restore them via soundfile.
+
+if not hasattr(torchaudio, "AudioMetaData"):
+    @dataclasses.dataclass
+    class _AudioMetaData:
+        sample_rate: int
+        num_frames: int
+        num_channels: int
+        bits_per_sample: int
+        encoding: str
+    torchaudio.AudioMetaData = _AudioMetaData  # type: ignore[attr-defined]
+
+if not hasattr(torchaudio, "list_audio_backends"):
+    torchaudio.list_audio_backends = lambda: ["soundfile"]  # type: ignore[attr-defined]
+
+if not hasattr(torchaudio, "info"):
+    def _info(path, backend=None):
+        i = sf.info(path)
+        return torchaudio.AudioMetaData(
+            sample_rate=i.samplerate,
+            num_frames=i.frames,
+            num_channels=i.channels,
+            bits_per_sample=16,
+            encoding="PCM_S",
+        )
+    torchaudio.info = _info  # type: ignore[attr-defined]
+
+_orig_load = torchaudio.load
+def _load_soundfile(uri, frame_offset=0, num_frames=-1, normalize=True,
+                    channels_first=True, format=None, buffer_size=4096, backend=None):
+    data, sr = sf.read(uri, start=frame_offset, frames=num_frames,
+                       always_2d=True, dtype="float32")
+    waveform = torch.from_numpy(data.T if channels_first else data)
+    return waveform, sr
+torchaudio.load = _load_soundfile  # type: ignore[attr-defined]
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# PyTorch 2.6 changed weights_only default to True; pyannote checkpoints
+# contain arbitrary classes that are not in the safe-globals list.
+# Patch lightning_fabric's loader (used internally by pyannote) to allow this.
+import lightning_fabric.utilities.cloud_io as _cloud_io
+_orig_lf_load = _cloud_io._load
+def _lf_load_compat(path_or_url, map_location=None, weights_only=None):
+    return torch.load(path_or_url, map_location=map_location, weights_only=False)
+_cloud_io._load = _lf_load_compat
+
 from pyannote.audio import Inference, Model
 from tqdm import tqdm
 

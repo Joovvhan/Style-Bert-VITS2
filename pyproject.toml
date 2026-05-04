@@ -66,6 +66,7 @@ dependencies = [
     # torch>=2.6이므로 CVE-2025-32434 체크 통과, torch>=2.4이므로 5.x 체크도 통과
     "transformers>=4.0",
     "umap-learn",
+    "torchinfo>=1.8.0",
 ]
 
 [project.optional-dependencies]

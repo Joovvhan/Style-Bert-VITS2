@@ -16,6 +16,7 @@ class Languages(StrEnum):
     JP = "JP"
     EN = "EN"
     ZH = "ZH"
+    KO = "KO"
 
 
 # 言語ごとのデフォルトの BERT モデルのパス

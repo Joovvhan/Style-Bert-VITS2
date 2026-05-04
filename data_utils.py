@@ -123,6 +123,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             raise ValueError(
                 f"{filename} {sampling_rate} SR doesn't match target {self.sampling_rate} SR"
             )
+        if audio.ndim == 2:  # stereo (frames, channels) → mono
+            audio = audio.mean(dim=-1)
         audio_norm = audio / self.max_wav_value
         audio_norm = audio_norm.unsqueeze(0)
         spec_filename = filename.replace(".wav", ".spec.pt")
