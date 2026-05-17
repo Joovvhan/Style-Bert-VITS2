@@ -12,7 +12,9 @@ from data_utils import (
     TextAudioSpeakerCollate,
     TextAudioSpeakerLoader,
 )
+from mel_processing import spectrogram_torch
 from style_bert_vits2.models import commons
+from style_bert_vits2.models.utils import load_wav_to_torch
 from style_bert_vits2.nlp.symbols_ko import cleaned_text_to_sequence_ko
 
 
@@ -23,6 +25,28 @@ class TextAudioSpeakerLoaderKO(TextAudioSpeakerLoader):
     - Returns zero BERT tensors (Phase 1: no language model)
     - Batch format matches JP-Extra single-bert layout
     """
+
+    def __init__(self, audiopaths_sid_text, hparams, no_spec_cache: bool = False):
+        super().__init__(audiopaths_sid_text, hparams)
+        self._no_spec_cache = no_spec_cache
+
+    def get_audio(self, filename):
+        if not self._no_spec_cache:
+            return super().get_audio(filename)
+        # --no-spec-cache: WAV read + STFT 계산만, 저장/로드 없음
+        audio, sampling_rate = load_wav_to_torch(filename)
+        if audio.ndim == 2:
+            audio = audio.mean(dim=-1)
+        audio_norm = (audio / self.max_wav_value).unsqueeze(0)
+        spec = spectrogram_torch(
+            audio_norm,
+            self.filter_length,
+            self.sampling_rate,
+            self.hop_length,
+            self.win_length,
+            center=False,
+        )
+        return torch.squeeze(spec, 0), audio_norm
 
     def get_text(self, text, word2ph, phone, tone, language_str, wav_path):
         phone, tone, language = cleaned_text_to_sequence_ko(phone, tone, language_str)

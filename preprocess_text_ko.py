@@ -14,7 +14,9 @@ Usage:
 
 import argparse
 import json
+import multiprocessing
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 from random import sample
 from typing import Optional
@@ -23,7 +25,8 @@ from tqdm import tqdm
 
 from config import get_config
 from style_bert_vits2.logging import logger
-from style_bert_vits2.nlp.korean.g2p import g2p
+from style_bert_vits2.nlp.korean.g2p import g2p as g2p_jamo
+from style_bert_vits2.nlp.korean.g2p_g2pk2 import g2p as g2p_g2pk2
 from style_bert_vits2.nlp.korean.normalizer import normalize_text
 from style_bert_vits2.utils.stdout_wrapper import SAFE_STDOUT
 
@@ -41,7 +44,18 @@ def _write_error(log_path: Path, line: str, error: Exception) -> None:
         f.write(f"{line.strip()}\n{error}\n\n")
 
 
-def process_line(line: str, transcription_path: Path, correct_path: bool) -> str:
+def _process_one(args: tuple) -> tuple[str | None, str | None]:
+    """Worker function for multiprocessing. Returns (result, error_str)."""
+    line, transcription_path_str, correct_path, use_g2pk2 = args
+    try:
+        return process_line(line, Path(transcription_path_str), correct_path, use_g2pk2), None
+    except Exception as e:
+        return None, f"{line.strip()}\n{e}\n\n"
+
+
+def process_line(
+    line: str, transcription_path: Path, correct_path: bool, use_g2pk2: bool = False
+) -> str:
     parts = line.strip().split("|")
     if len(parts) != 4:
         raise ValueError(f"Invalid format (expected 4 fields): {line.strip()}")
@@ -50,7 +64,8 @@ def process_line(line: str, transcription_path: Path, correct_path: bool) -> str
         raise ValueError(f"Expected language KO, got {language!r}")
 
     norm_text = normalize_text(text)
-    phones, tones, word2ph = g2p(norm_text)
+    g2p_fn = g2p_g2pk2 if use_g2pk2 else g2p_jamo
+    phones, tones, word2ph = g2p_fn(norm_text)
 
     if correct_path:
         utt = str(transcription_path.parent / "wavs" / utt)
@@ -75,6 +90,8 @@ def preprocess(
     val_per_spk: int,
     max_val_total: int,
     correct_path: bool,
+    use_g2pk2: bool = False,
+    workers: int = 1,
 ) -> None:
     if not cleaned_path:
         cleaned_path = transcription_path.with_name(transcription_path.name + ".cleaned")
@@ -84,18 +101,32 @@ def preprocess(
         error_log.unlink()
     error_count = 0
 
-    total = _count_lines(transcription_path)
-    with (
-        transcription_path.open("r", encoding="utf-8") as fin,
-        cleaned_path.open("w", encoding="utf-8") as fout,
-    ):
-        for line in tqdm(fin, file=SAFE_STDOUT, total=total, dynamic_ncols=True):
-            try:
-                fout.write(process_line(line, transcription_path, correct_path))
-            except Exception as e:
-                logger.error(f"Error at line:\n{line.strip()}\n{e}")
-                _write_error(error_log, line, e)
-                error_count += 1
+    lines = transcription_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    total = len(lines)
+
+    with cleaned_path.open("w", encoding="utf-8") as fout:
+        if workers > 1:
+            tasks = [(line, str(transcription_path), correct_path, use_g2pk2) for line in lines]
+            with multiprocessing.Pool(workers) as pool:
+                for result, err in tqdm(
+                    pool.imap(_process_one, tasks, chunksize=32),
+                    file=SAFE_STDOUT, total=total, dynamic_ncols=True,
+                ):
+                    if err:
+                        logger.error(f"Error:\n{err.strip()}")
+                        with error_log.open("a", encoding="utf-8") as ef:
+                            ef.write(err)
+                        error_count += 1
+                    else:
+                        fout.write(result)
+        else:
+            for line in tqdm(lines, file=SAFE_STDOUT, total=total, dynamic_ncols=True):
+                try:
+                    fout.write(process_line(line, transcription_path, correct_path, use_g2pk2))
+                except Exception as e:
+                    logger.error(f"Error at line:\n{line.strip()}\n{e}")
+                    _write_error(error_log, line, e)
+                    error_count += 1
 
     if error_count:
         logger.warning(
@@ -161,7 +192,20 @@ if __name__ == "__main__":
     parser.add_argument("--val-per-spk", type=int, default=preprocess_text_config.val_per_lang)
     parser.add_argument("--max-val-total", type=int, default=preprocess_text_config.max_val_total)
     parser.add_argument("--correct_path", action="store_true")
+    parser.add_argument(
+        "--use-g2pk2",
+        action="store_true",
+        help="g2pk2로 음운 변동 규칙 적용 후 자모 분해 (기본값: 단순 자모 분해)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="병렬 처리 프로세스 수 (기본값: 1, 0=CPU 코어 수)",
+    )
     args = parser.parse_args()
+
+    n_workers = args.workers if args.workers > 0 else multiprocessing.cpu_count()
 
     preprocess(
         transcription_path=Path(args.transcription_path),
@@ -172,4 +216,6 @@ if __name__ == "__main__":
         val_per_spk=args.val_per_spk,
         max_val_total=args.max_val_total,
         correct_path=args.correct_path,
+        use_g2pk2=args.use_g2pk2,
+        workers=n_workers,
     )

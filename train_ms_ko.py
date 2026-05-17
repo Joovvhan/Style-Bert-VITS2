@@ -52,32 +52,51 @@ def run():
     parser.add_argument("--assets_root", type=str,
                         default=config.assets_root)
     parser.add_argument("--skip_default_style", action="store_true")
+    parser.add_argument("--style-source", type=str, default=None,
+                        help="스타일 벡터 생성용 .npy 탐색 경로 (기본값: --model 경로와 동일)")
     parser.add_argument("--no_progress_bar", action="store_true")
     parser.add_argument("--speedup", action="store_true")
+    parser.add_argument("--no-spec-cache", action="store_true",
+                        help="spec.pt 저장/로드 없이 매번 STFT 계산 (epoch 간 속도 비교용)")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="이어서 학습할 체크포인트 디렉토리 경로 "
+                             "(예: Data/kss/models/20260505_124239).")
+    parser.add_argument("--epochs", type=int, default=None,
+                        help="총 학습 epoch 수. 지정하면 config.json의 epochs를 덮어씀.")
     args = parser.parse_args()
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = os.path.join(args.model, config.train_ms_config.model_dir, timestamp)
+    if args.resume:
+        model_dir = args.resume
+    else:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_dir = os.path.join(args.model, config.train_ms_config.model_dir, timestamp)
     os.makedirs(model_dir, exist_ok=True)
 
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     logger.add(os.path.join(model_dir, f"train_{timestamp}.log"))
 
     hps = HyperParameters.load_from_json(args.config)
     hps.model_dir = model_dir
     hps.speedup = args.speedup
+    if args.epochs is not None:
+        hps.train.epochs = args.epochs
 
-    if os.path.realpath(args.config) != os.path.realpath(config.train_ms_config.config_path):
-        with open(args.config, encoding="utf-8") as f:
-            data = f.read()
-        os.makedirs(os.path.dirname(config.train_ms_config.config_path), exist_ok=True)
-        with open(config.train_ms_config.config_path, "w", encoding="utf-8") as f:
-            f.write(data)
+    # WARNING: 아래 블록은 --config로 지정한 파일을 config.yml의 dataset_path 기준 config.json에
+    # 덮어쓰는 동작을 한다. --config와 dataset_path가 다른 모델을 가리킬 경우 엉뚱한 config.json이
+    # 오염되므로 비활성화함.
+    # if os.path.realpath(args.config) != os.path.realpath(config.train_ms_config.config_path):
+    #     with open(args.config, encoding="utf-8") as f:
+    #         data = f.read()
+    #     os.makedirs(os.path.dirname(config.train_ms_config.config_path), exist_ok=True)
+    #     with open(config.train_ms_config.config_path, "w", encoding="utf-8") as f:
+    #         f.write(data)
 
     os.makedirs(config.out_dir, exist_ok=True)
 
     if not args.skip_default_style:
+        style_source = args.style_source if args.style_source else args.model
         default_style.save_styles_by_dirs(
-            args.model, config.out_dir,
+            style_source, config.out_dir,
             config_path=args.config,
             config_output_path=os.path.join(config.out_dir, "config.json"),
         )
@@ -91,7 +110,8 @@ def run():
         writer = SummaryWriter(log_dir=model_dir)
         writer_eval = SummaryWriter(log_dir=os.path.join(model_dir, "eval"))
 
-    train_dataset = TextAudioSpeakerLoaderKO(hps.data.training_files, hps.data)
+    train_dataset = TextAudioSpeakerLoaderKO(hps.data.training_files, hps.data,
+                                              no_spec_cache=args.no_spec_cache)
     collate_fn = TextAudioSpeakerCollateKO()
     train_loader = DataLoader(
         train_dataset,
@@ -105,7 +125,8 @@ def run():
         drop_last=True,
     )
 
-    eval_dataset = TextAudioSpeakerLoaderKO(hps.data.validation_files, hps.data)
+    eval_dataset = TextAudioSpeakerLoaderKO(hps.data.validation_files, hps.data,
+                                             no_spec_cache=args.no_spec_cache)
     eval_loader = DataLoader(
         eval_dataset,
         num_workers=0,
@@ -417,7 +438,7 @@ def train_and_evaluate(
             if not hps.speedup:
                 evaluate(hps, net_g, eval_loader, writer_eval)
 
-        save_interval = getattr(hps.train, "save_interval", hps.train.eval_interval)
+        save_interval = hps.train.save_interval or hps.train.eval_interval
         if (global_step % save_interval == 0 and not_initial):
             utils.checkpoints.save_checkpoint(
                 net_g, optim_g, hps.train.learning_rate, epoch,
@@ -446,8 +467,8 @@ def train_and_evaluate(
                 f"Epoch {epoch}({100.0 * batch_idx / len(train_loader):.0f}%)/{hps.train.epochs}")
             pbar.update()
 
-    gc.collect()
-    torch.cuda.empty_cache()
+    # gc.collect()
+    # torch.cuda.empty_cache()
     if pbar is None:
         logger.info(f"====> Epoch: {epoch}, step: {global_step}")
 

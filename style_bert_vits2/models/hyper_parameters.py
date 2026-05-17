@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 class HyperParametersTrain(BaseModel):
     log_interval: int = 200
     eval_interval: int = 1000
+    save_interval: Optional[int] = None
     seed: int = 42
     epochs: int = 1000
     learning_rate: float = 0.0001

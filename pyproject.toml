@@ -67,6 +67,8 @@ dependencies = [
     "transformers>=4.0",
     "umap-learn",
     "torchinfo>=1.8.0",
+    "g2pk2>=0.0.3",
+    "eunjeon>=0.4.0",
 ]
 
 [project.optional-dependencies]
