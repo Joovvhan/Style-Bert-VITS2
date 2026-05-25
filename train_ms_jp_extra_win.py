@@ -87,6 +87,18 @@ def run():
         help="Don't use custom batch sampler for training, which was used in the version < 2.5",
         action="store_true",
     )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="이어서 학습할 체크포인트 디렉토리 경로 (예: Data/jinx/models)",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="총 학습 epoch 수. 지정하면 config.json의 epochs를 덮어씀.",
+    )
     args = parser.parse_args()
 
     rank = 0
@@ -94,7 +106,10 @@ def run():
     n_gpus = 1
 
     # Set log file
-    model_dir = os.path.join(args.model, config.train_ms_config.model_dir)
+    if args.resume:
+        model_dir = args.resume
+    else:
+        model_dir = os.path.join(args.model, config.train_ms_config.model_dir)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     logger.add(os.path.join(args.model, f"train_{timestamp}.log"))
 
@@ -102,6 +117,8 @@ def run():
     hps.model_dir = model_dir
     hps.speedup = args.speedup
     hps.repo_id = None
+    if args.epochs is not None:
+        hps.train.epochs = args.epochs
 
     if os.path.realpath(args.config) != os.path.realpath(
         config.train_ms_config.config_path

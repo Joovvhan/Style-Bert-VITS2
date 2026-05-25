@@ -110,6 +110,8 @@ def run():
         writer = SummaryWriter(log_dir=model_dir)
         writer_eval = SummaryWriter(log_dir=os.path.join(model_dir, "eval"))
 
+    logger.info(f"Training files : {hps.data.training_files}")
+    logger.info(f"Validation files: {hps.data.validation_files}")
     train_dataset = TextAudioSpeakerLoaderKO(hps.data.training_files, hps.data,
                                               no_spec_cache=args.no_spec_cache)
     collate_fn = TextAudioSpeakerCollateKO()
@@ -496,7 +498,8 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                     y=spec, max_len=1000, sdp_ratio=0.0 if not use_sdp else 1.0)
                 y_hat_lengths = mask.sum([1, 2]).long() * hps.data.hop_length
                 audio_dict[f"gen/audio_{batch_idx}_{use_sdp}"] = y_hat[0, :, :y_hat_lengths[0]]
-                audio_dict[f"gt/audio_{batch_idx}"] = y[0, :, :y_lengths[0]]
+                if global_step <= hps.train.eval_interval:
+                    audio_dict[f"gt/audio_{batch_idx}"] = y[0, :, :y_lengths[0]]
     utils.summarize(writer=writer_eval, global_step=global_step,
                     audios=audio_dict, audio_sampling_rate=hps.data.sampling_rate)
     generator.train()
