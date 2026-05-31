@@ -24,8 +24,8 @@ pyopenjtalk_worker.initialize_worker()
 update_dict()
 
 
-def process_line(x: tuple[str, bool]):
-    line, add_blank = x
+def process_line(x: tuple[str, bool, bool]):
+    line, add_blank, use_ko_bert = x
     device = config.bert_gen_config.device
     if config.bert_gen_config.use_multi_device:
         rank = mp.current_process()._identity
@@ -36,13 +36,19 @@ def process_line(x: tuple[str, bool]):
         else:
             device = "cpu"
     wav_path, _, language_str, text, phones, tone, word2ph = line.strip().split("|")
+    if language_str == "KO" and not use_ko_bert:
+        return
     phone = phones.split(" ")
     tone = [int(i) for i in tone.split(" ")]
     word2ph = [int(i) for i in word2ph.split(" ")]
     word2ph = [i for i in word2ph]
-    phone, tone, language = cleaned_text_to_sequence(
-        phone, tone, Languages[language_str]
-    )
+    if language_str == "KO":
+        from style_bert_vits2.nlp.symbols_ko import cleaned_text_to_sequence_ko
+        phone, tone, language = cleaned_text_to_sequence_ko(phone, tone, language_str)
+    else:
+        phone, tone, language = cleaned_text_to_sequence(
+            phone, tone, Languages[language_str]
+        )
 
     if add_blank:
         phone = commons.intersperse(phone, 0)
@@ -80,6 +86,7 @@ if __name__ == "__main__":
     with open(hps.data.validation_files, encoding="utf-8") as f:
         lines.extend(f.readlines())
     add_blank = [hps.data.add_blank] * len(lines)
+    use_ko_bert = [getattr(hps.data, "use_ko_bert", False)] * len(lines)
 
     if len(lines) != 0:
         # pyopenjtalkの別ワーカー化により、並列処理でエラーがでる模様なので、一旦シングルスレッド強制にする
@@ -87,7 +94,7 @@ if __name__ == "__main__":
         with ThreadPoolExecutor(max_workers=num_processes) as executor:
             _ = list(
                 tqdm(
-                    executor.map(process_line, zip(lines, add_blank)),
+                    executor.map(process_line, zip(lines, add_blank, use_ko_bert)),
                     total=len(lines),
                     file=SAFE_STDOUT,
                     dynamic_ncols=True,

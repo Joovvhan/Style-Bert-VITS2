@@ -29,6 +29,7 @@ class TextAudioSpeakerLoaderKO(TextAudioSpeakerLoader):
     def __init__(self, audiopaths_sid_text, hparams, no_spec_cache: bool = False):
         super().__init__(audiopaths_sid_text, hparams)
         self._no_spec_cache = no_spec_cache
+        self.use_ko_bert = getattr(hparams, "use_ko_bert", False)
 
     def get_audio(self, filename):
         if not self._no_spec_cache:
@@ -58,8 +59,14 @@ class TextAudioSpeakerLoaderKO(TextAudioSpeakerLoader):
                 word2ph[i] = word2ph[i] * 2
             word2ph[0] += 1
 
-        # Phase 1: no BERT — zero tensor shaped [1024, T]
-        ko_bert = torch.zeros(1024, len(phone))
+        if self.use_ko_bert:
+            bert_path = wav_path.replace(".WAV", ".wav").replace(".wav", ".bert.pt")
+            ko_bert = torch.load(bert_path, weights_only=True)
+            assert ko_bert.shape[-1] == len(phone), (
+                f"bert.pt shape {ko_bert.shape} != phone len {len(phone)}: {wav_path}"
+            )
+        else:
+            ko_bert = torch.zeros(1024, len(phone))
         return (
             ko_bert,
             torch.LongTensor(phone),

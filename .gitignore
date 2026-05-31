@@ -16,6 +16,7 @@ dist/
 /bert/*/*.safetensors
 /bert/*/*.msgpack
 /bert/*/*.onnx
+/bert/klue-roberta-large/
 
 /configs/paths.yml
 

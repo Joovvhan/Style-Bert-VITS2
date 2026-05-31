@@ -6,9 +6,9 @@
 |------|------|
 | Phase 1 학습 (kss_exp_jamo, kss_exp_g2pk2, zero BERT) | 🔄 진행 중 |
 | 정렬 알고리즘 설계 (`KO_BERT_SPEC.md`) | ✅ 완료 |
-| 정렬 알고리즘 검증 (25/25 PASS) | ✅ 완료 |
-| 독립 실험 저장소 (`ko_bert_alignment_experiment/`) | ✅ 준비됨 |
-| Style-Bert-VITS2 통합 구현 | ⬜ 미시작 |
+| 정렬 알고리즘 검증 (29/29 PASS) | ✅ 완료 |
+| 독립 실험 저장소 (`ko_bert_alignment_experiment/`) | ✅ 완료 |
+| Style-Bert-VITS2 통합 구현 (L2 PASS) | ✅ 완료 |
 | BERT 연결 학습 (Phase 3) | ⬜ 미시작 |
 
 ---

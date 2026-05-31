@@ -52,11 +52,7 @@ def extract_bert_feature(
     elif language == Languages.ZH:
         from style_bert_vits2.nlp.chinese.bert_feature import extract_bert_feature
     elif language == Languages.KO:
-        # Phase 1: no BERT for Korean — return zero tensor
-        import torch
-
-        total_phones = sum(word2ph)
-        return torch.zeros(1024, total_phones)
+        from style_bert_vits2.nlp.korean.bert_feature import extract_bert_feature
     else:
         raise ValueError(f"Language {language} not supported")
 
